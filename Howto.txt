@@ -1,1 +1,0 @@
-cd "C:\Users\Admin\OneDrive\Advisory\Research & Develpoment\Development\1 Indices dashboard"

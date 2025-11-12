@@ -180,7 +180,7 @@ TICKERS_SECTORAL = {
     "NIFTY PSU BANK": "^CNXPSUBANK",
     "NIFTY PVT BANK": "NIFTY_PVT_BANK.NS",
     "NIFTY CONSUMER": "^CNXCONSUM",
-    "NIFTY OIL & GAS": "OILIETF.NS",
+    "NIFTY OIL & GAS - ETF": "OILIETF.NS",
     "NIFTY CHEMICALS": "^NIFTYCHEM",
     "NIFTY PSE": "^CNXPSE"
 }
@@ -509,8 +509,20 @@ with tab3:
                 )
                 
                 # --- Get UNADJUSTED Current Price from .info ---
-                current_price_unadj = info.get('currentPrice', 'N/A')
-                st.metric(label="Current Price (Unadjusted LTP)", value=f"{current_price_unadj:,.2f}")
+                #current_price_unadj = info.get('currentPrice', 'N/A')
+                #st.metric(label="Current Price (Unadjusted LTP)", value=f"{current_price_unadj:,.2f}")
+
+                # --- Get UNADJUSTED Current Price from .info ---
+                current_price_unadj = info.get('currentPrice') # Get the value (or None)
+
+                # Check if the value is a valid number before formatting
+                if isinstance(current_price_unadj, (int, float)):
+                    value_to_display = f"{current_price_unadj:,.2f}"
+                else:
+                    value_to_display = "N/A" # Default to "N/A" string if not a number
+
+                st.metric(label="Current Price (Unadjusted LTP)", value=value_to_display)
+
 
                 # --- 52w H/L from ADJUSTED data ---
                 hist_1y_adj = hist_data.last('52w')

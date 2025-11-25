@@ -40,18 +40,61 @@ def load_model_portfolio_from_sheet():
         return {}
 
 
-# --- NEW MASTER DATA FETCHER (Unchanged) ---
+# --- NEW MASTER DATA FETCHER (Batched to prevent Timeouts) ---
 @st.cache_data(ttl=600)
 def fetch_master_data(tickers_list):
     """
-    Downloads 2 years of auto-adjusted data for ALL tickers at once.
+    Downloads data in batches to avoid Yahoo Finance timeouts.
     """
     if not tickers_list:
         return None
+    
     st.info(f"Fetching master data for {len(tickers_list)} unique tickers...")
+    
+    # 1. Deduplicate tickers
+    tickers_list = list(set(tickers_list))
+    
+    all_data_frames = []
+    chunk_size = 20 # Download 20 tickers at a time
+    
+    progress_bar = st.progress(0)
+    
     try:
-        data = yf.download(tickers_list, period="2y", auto_adjust=True, progress=False)
-        return data
+        for i in range(0, len(tickers_list), chunk_size):
+            batch = tickers_list[i : i + chunk_size]
+            
+            # Update progress
+            progress_bar.progress(min(i / len(tickers_list), 1.0))
+            
+            try:
+                # Fetch batch
+                batch_data = yf.download(batch, period="2y", auto_adjust=True, progress=False, threads=True)
+                
+                if not batch_data.empty:
+                    all_data_frames.append(batch_data)
+                    
+            except Exception as e:
+                print(f"Error fetching batch {i}: {e}")
+                continue
+                
+            # Optional: Small sleep to be nice to the API
+            time.sleep(0.5)
+
+        progress_bar.empty()
+
+        if not all_data_frames:
+            return None
+
+        # Combine all batches
+        # Note: yf.download with multiple tickers returns a MultiIndex (Price, Ticker).
+        # We need to concat carefully along the columns.
+        final_df = pd.concat(all_data_frames, axis=1)
+        
+        # Remove duplicate columns if any overlap occurred (rare but possible)
+        final_df = final_df.loc[:, ~final_df.columns.duplicated()]
+        
+        return final_df
+
     except Exception as e:
         st.error(f"Error in master data fetch: {e}")
         return None

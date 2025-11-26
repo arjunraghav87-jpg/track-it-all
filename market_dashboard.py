@@ -401,7 +401,7 @@ with st.expander("Show Master Data Log"):
     unique_tickers.update(TICKERS_CRYPTO.values())
     unique_tickers.update(TICKERS_MODEL_PORTFOLIO.values()) 
     
-    master_ticker_list = list(unique_tickers)
+    master_ticker_list = sorted(list(unique_tickers))
     
     if master_ticker_list:
         master_data = fetch_master_data(master_ticker_list)

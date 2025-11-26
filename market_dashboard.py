@@ -364,15 +364,19 @@ if st.sidebar.button("Refresh All Data"):
 TICKERS_INDIAN_INDICES = {
     "NIFTY 50": "^NSEI", "NIFTY NEXT 50": "^NSMIDCP", "NIFTY 500": "^CRSLDX",
     "NIFTY MIDCAP 150": "MID150BEES.NS", "NIFTY SMALLCAP 250": "HDFCSML250.NS",
-    "NIFTY MICROCAP 250": "MICROS250.NS", "INDIA VIX": "^INDIAVIX"
+    #"NIFTY MICROCAP 250": "MICROS250.NS", 
+    "INDIA VIX": "^INDIAVIX"
 }
 TICKERS_SECTORAL = {
     "NIFTY AUTO": "^CNXAUTO", "NIFTY BANK": "^NSEBANK", "NIFTY FIN SERVICE": "NIFTY_FIN_SERVICE.NS",
     "NIFTY FMCG": "^CNXFMCG", "NIFTY IT": "^CNXIT", "NIFTY MEDIA": "^CNXMEDIA",
     "NIFTY METAL": "^CNXMETAL", "NIFTY PHARMA": "^CNXPHARMA", "NIFTY REALTY": "^CNXREALTY",
-    "NIFTY HEALTHCARE": "^NIFTYHEALTHCARE", "NIFTY PSU BANK": "^CNXPSUBANK",
+    #"NIFTY HEALTHCARE": "^NIFTYHEALTHCARE", 
+    "NIFTY PSU BANK": "^CNXPSUBANK",
     "NIFTY PVT BANK": "NIFTY_PVT_BANK.NS", "NIFTY CONSUMER": "^CNXCONSUM",
-    "NIFTY OIL & GAS - ETF": "OILIETF.NS", "NIFTY CHEMICALS": "^NIFTYCHEM", "NIFTY PSE": "^CNXPSE"
+    "NIFTY OIL & GAS - ETF": "OILIETF.NS", 
+    #"NIFTY CHEMICALS": "^NIFTYCHEM", 
+    "NIFTY PSE": "^CNXPSE"
 }
 TICKERS_GLOBAL = {
     "S&P 500": "^GSPC", "NASDAQ": "^IXIC", "Germany (DAX)": "^GDAXI",
@@ -434,12 +438,13 @@ def render_technical_tab(tab_name, ticker_dict, period_length, period_label, key
     st.header(f"{tab_name} ({view_mode})")
     analysis_results = []
     
+    # 1. Prepare Data
     for name, ticker in ticker_dict.items():
         if ticker in master_data['Close']:
             ticker_data = master_data.loc[:, (slice(None), ticker)]
             ticker_data.columns = ticker_data.columns.droplevel(1)
             
-            # --- RESAMPLE IF WEEKLY ---
+            # Resample if needed
             if view_mode == "Weekly Analysis":
                 ticker_data = resample_to_weekly(ticker_data)
             
@@ -448,11 +453,13 @@ def render_technical_tab(tab_name, ticker_dict, period_length, period_label, key
                 analysis['Ticker'] = ticker
                 analysis_results.append(analysis)
 
+    # 2. Render Table with Toggles
     if analysis_results:
         df = pd.DataFrame(analysis_results)
         display_cols = get_display_cols(period_label)
         display_cols = [col for col in display_cols if col in df.columns]
 
+        # Sorting Controls
         with st.expander("Show Controls", expanded=False):
             sort_by = st.selectbox("Sort by", options=display_cols, key=f"sort_{key_prefix}")
             ascending = st.radio("Order", ["Ascending", "Descending"], horizontal=True, key=f"order_{key_prefix}") == "Ascending"
@@ -462,28 +469,67 @@ def render_technical_tab(tab_name, ticker_dict, period_length, period_label, key
                 df[sort_key] = pd.to_numeric(df[sort_by].astype(str).str.replace(r'[%,]', '', regex=True).str.replace('N/A', 'nan'), errors='coerce')
                 df = df.sort_values(by=sort_key, ascending=ascending, na_position='last').drop(columns=[sort_key])
 
+        # Headers
         cols = st.columns(len(display_cols) + 1)
-        for col, header in zip(cols, display_cols + ["Chart"]): col.markdown(f"**{header}**")
+        for col, header in zip(cols, display_cols + ["Action"]): 
+            col.markdown(f"**{header}**")
         st.divider()
 
+        # Rows
         for _, row in df.iterrows():
+            ticker = row['Ticker']
+            # Unique ID for this row's open/close state
+            state_key = f"chart_open_{ticker}_{key_prefix}"
+            
+            # Initialize State if not present
+            if state_key not in st.session_state:
+                st.session_state[state_key] = False
+
             r_cols = st.columns(len(display_cols) + 1)
+            
+            # Render Data Columns
             for i, col in enumerate(display_cols):
                 val = row[col]
                 r_cols[i].markdown(f"<span style='color: {get_color(val)};'>{val}</span>", unsafe_allow_html=True)
             
-            if r_cols[-1].button("View", key=f"btn_{row['Ticker']}_{key_prefix}"):
-                c_data = master_data.loc[:, (slice(None), row['Ticker'])]
-                c_data.columns = c_data.columns.droplevel(1)
-                if view_mode == "Weekly Analysis": c_data = resample_to_weekly(c_data)
-                
-                c_data.ta.ichimoku(append=True)
-                c_data.ta.rsi(length=14, append=True)
-                c_data = c_data.rename(columns={'ITS_9': 'Tenkan', 'IKS_26': 'Kijun', 'ISA_9': 'SenkouA', 'ISB_26': 'SenkouB', 'ICS_26': 'Chikou'})
-                
-                fig = create_ichimoku_chart(c_data, f"{row['Index']} ({view_mode})")
-                st.plotly_chart(fig, width='stretch') # Use full width
-            st.divider()
+            # Render Toggle Button
+            # If state is True, show "Close". If False, show "View".
+            btn_label = "Close ❌" if st.session_state[state_key] else "View 📈"
+            
+            if r_cols[-1].button(btn_label, key=f"btn_{ticker}_{key_prefix}"):
+                # Toggle the state
+                st.session_state[state_key] = not st.session_state[state_key]
+                st.rerun() # Force reload to update UI immediately
+
+            # Render Chart (If state is Open)
+            if st.session_state[state_key]:
+                with st.container():
+                    st.info(f"Generating {view_mode} Chart for {row['Index']}...")
+                    
+                    # Fetch Data for Chart
+                    c_data = master_data.loc[:, (slice(None), ticker)]
+                    c_data.columns = c_data.columns.droplevel(1)
+                    if view_mode == "Weekly Analysis": 
+                        c_data = resample_to_weekly(c_data)
+                    
+                    # Calculate Indicators
+                    c_data.ta.ichimoku(append=True)
+                    c_data.ta.rsi(length=14, append=True)
+                    c_data = c_data.rename(columns={'ITS_9': 'Tenkan', 'IKS_26': 'Kijun', 'ISA_9': 'SenkouA', 'ISB_26': 'SenkouB', 'ICS_26': 'Chikou'})
+                    
+                    # Create & Show Chart
+                    fig = create_ichimoku_chart(c_data, f"{row['Index']} ({view_mode})")
+                    
+                    # Add a dedicated close button above the chart too (optional UX)
+                    col_close, _ = st.columns([1, 10])
+                    if col_close.button("Close Chart", key=f"close_inner_{ticker}_{key_prefix}"):
+                        st.session_state[state_key] = False
+                        st.rerun()
+
+                    st.plotly_chart(fig, width='stretch', key=f"plot_{ticker}_{key_prefix}")
+                    st.markdown("---") # Divider after chart
+            
+            st.divider() # Divider between rows
 
 with tab1: render_technical_tab("Indian Indices", TICKERS_INDIAN_INDICES, selected_period_length, selected_period_label, "t1")
 with tab2: render_technical_tab("Sectoral Indices", TICKERS_SECTORAL, selected_period_length, selected_period_label, "t2")

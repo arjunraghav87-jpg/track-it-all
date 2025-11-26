@@ -6,6 +6,7 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+import time
 
 # --- Imports: We no longer import from modules/analysis ---
 from modules.data_fetcher import fetch_data, fetch_unadjusted_data
@@ -41,21 +42,22 @@ def load_model_portfolio_from_sheet():
 
 
 # --- NEW MASTER DATA FETCHER (Batched to prevent Timeouts) ---
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600) #cache for 1 hour
 def fetch_master_data(tickers_list):
     """
-    Downloads data in batches to avoid Yahoo Finance timeouts.
+    Downloads data in SMALLER, SERIAL batches to avoid Yahoo Finance Rate Limits.
     """
     if not tickers_list:
         return None
     
+    # Deduplicate tickers
+    tickers_list = list(set(tickers_list))
     st.info(f"Fetching master data for {len(tickers_list)} unique tickers...")
     
-    # 1. Deduplicate tickers
-    tickers_list = list(set(tickers_list))
-    
     all_data_frames = []
-    chunk_size = 20 # Download 20 tickers at a time
+    
+    # --- CHANGE 1: Smaller batches (10 instead of 20) ---
+    chunk_size = 10 
     
     progress_bar = st.progress(0)
     
@@ -67,18 +69,21 @@ def fetch_master_data(tickers_list):
             progress_bar.progress(min(i / len(tickers_list), 1.0))
             
             try:
-                # Fetch batch
-                batch_data = yf.download(batch, period="2y", auto_adjust=True, progress=False, threads=True)
+                # --- CHANGE 2: threads=False (Crucial for Streamlit Cloud) ---
+                # threads=True sends all requests instantly -> Instant Ban.
+                # threads=False sends them one by one -> Safe.
+                batch_data = yf.download(batch, period="2y", auto_adjust=True, progress=False, threads=False)
                 
                 if not batch_data.empty:
                     all_data_frames.append(batch_data)
                     
             except Exception as e:
                 print(f"Error fetching batch {i}: {e}")
+                # Don't stop, just skip this batch
                 continue
                 
-            # Optional: Small sleep to be nice to the API
-            time.sleep(0.5)
+            # --- CHANGE 3: Longer sleep (2 seconds) ---
+            time.sleep(2.0) 
 
         progress_bar.empty()
 
@@ -86,11 +91,9 @@ def fetch_master_data(tickers_list):
             return None
 
         # Combine all batches
-        # Note: yf.download with multiple tickers returns a MultiIndex (Price, Ticker).
-        # We need to concat carefully along the columns.
         final_df = pd.concat(all_data_frames, axis=1)
         
-        # Remove duplicate columns if any overlap occurred (rare but possible)
+        # Remove duplicate columns if any overlap occurred
         final_df = final_df.loc[:, ~final_df.columns.duplicated()]
         
         return final_df
